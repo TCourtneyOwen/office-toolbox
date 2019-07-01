@@ -83,9 +83,9 @@ export function list(): Promise<Array<[string, string, string]>> {
   return getAllIdsAndManifests();
 }
 
-export function remove(application: string, manifestPath: string): Promise<any> {
+export function remove(application: string, manifestPath: string, manifestSelected: boolean): Promise<any> {
   appInsightsClient.trackEvent({ name: 'remove' });
-  return removeManifest(application, manifestPath);
+  return removeManifest(application, manifestPath, manifestSelected);
 }
 
 export function validate(manifestPath: string): Promise<string> {
@@ -119,14 +119,16 @@ async function getAllManifests(): Promise<string[]> {
   }
 }
 
-function removeManifest(application: string, manifestPath: string): Promise<any> {
+
+
+function removeManifest(application: string, manifestPath: string, manifestSelected): Promise<any> {
   if (fs.existsSync(manifestPath)) {
     manifestPath = fs.realpathSync(manifestPath);
   }
 
   return (process.platform === 'win32')
     ? removeManifestFromRegistry(manifestPath)
-    : removeManifestFromSideloadingDirectory(application, manifestPath);
+    : removeManifestFromSideloadingDirectory(application, manifestPath, manifestSelected);
 }
 
 // NON-WIN32 COMMANDS //
@@ -164,9 +166,10 @@ function getManifestsFromSideloadingDirectory(inputApplication: string): Promise
   });
 }
 
-async function removeManifestFromSideloadingDirectory(inputApplication: string, manifestPathToRemove: string): Promise<void> {
+async function removeManifestFromSideloadingDirectory(inputApplication: string, manifestPathToRemove: string, manifestSelected: boolean): Promise<void> {
   try {
     let manifestRemoved = false;
+
     for (let application of Object.keys(applicationProperties)) {
       if (!inputApplication || application === inputApplication) {
         const sideloadingDirectory = applicationProperties[application].sideloadingDirectory;
@@ -175,18 +178,35 @@ async function removeManifestFromSideloadingDirectory(inputApplication: string, 
           continue;
         }
 
-        const sideloadingManifestPath = await getSideloadManifestPath(manifestPathToRemove, application);
-        fs.readdirSync(sideloadingDirectory).forEach(manifestName => {
+        let sideloadingManifestPath = undefined;
+        let legacySideloadingManifestPath = undefined;
+        if (manifestSelected) {
+          sideloadingManifestPath = manifestPathToRemove;
+        }
+        else {
+          sideloadingManifestPath = await getSideloadManifestPath(manifestPathToRemove, application);
+          legacySideloadingManifestPath = await getLegacySideloadManifestPath(manifestPathToRemove, application);
+        }
+        
+        fs.readdirSync(sideloadingDirectory).forEach(async manifestName => {
           const realManifestPath = (fs.realpathSync(path.join(sideloadingDirectory, manifestName)));
-          if (sideloadingManifestPath === realManifestPath) {
+          if (fs.existsSync(sideloadingManifestPath) && sideloadingManifestPath === realManifestPath) {
             console.log(`Removing ${sideloadingManifestPath} for application ${application}`);
             fs.unlinkSync(sideloadingManifestPath);
-            manifestRemoved = true;
+            manifestRemoved = true;    
+          }
+          if (fs.existsSync(legacySideloadingManifestPath) && legacySideloadingManifestPath === realManifestPath) {
+            const identialGuid: boolean = await compareManifestGuids(manifestPathToRemove, realManifestPath);
+            if (identialGuid) {
+              console.log(`Removing ${legacySideloadingManifestPath} for application ${application}`);
+              fs.unlinkSync(legacySideloadingManifestPath);
+              manifestRemoved = true;
+            }
           }
         });
-      }
-      if (manifestRemoved) {
-        return;
+        if (manifestRemoved) {
+          return;
+        }
       }
     }
     return console.log('No manifests were found to remove. Use "list" to show manifests that have been added.');
@@ -350,6 +370,21 @@ function validateManifest(manifestPath: string): Promise<string> {
 async function getSideloadManifestPath(manifestPath: string, application: string): Promise<string> {
   const [type, manifestGuid, version] = await parseManifest(manifestPath);
   return path.join(applicationProperties[application].sideloadingDirectory, `${manifestGuid}.${path.basename(manifestPath)}`);
+}
+
+async function getLegacySideloadManifestPath(manifestPath: string, application: string): Promise<string> {
+  return path.join(applicationProperties[application].sideloadingDirectory, path.basename(manifestPath));
+}
+
+async function compareManifestGuids(manifestPath1: string, manifestPath2: string): Promise<boolean> {
+  return new Promise(async (resolve) => {
+    if (fs.existsSync(manifestPath1) && fs.existsSync(manifestPath2)) {
+      const [manifest1Type, manifest1Guid, manifest1Version] = await parseManifest(manifestPath1);
+      const [manifest2Type, manifest2Guid, manifest2Version] = await parseManifest(manifestPath2);
+      return resolve(manifest1Guid === manifest2Guid);
+    }
+    return resolve(false);
+  });
 }
 
 function getIdsAndManifests(application: string): Promise<Array<[string, string]>> {
