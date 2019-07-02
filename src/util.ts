@@ -100,7 +100,7 @@ export function getManifests(application: string): Promise<string[]> {
     : getManifestsFromSideloadingDirectory(application);
 }
 
-function addManifest(application: string, manifestPath: string): Promise<any> {
+export function addManifest(application: string, manifestPath: string): Promise<any> {
   return (process.platform === 'win32')
     ? addManifestToRegistry(manifestPath)
     : addManifestToSideloadingDirectory(application, manifestPath);
@@ -121,7 +121,7 @@ async function getAllManifests(): Promise<string[]> {
 
 
 
-function removeManifest(application: string, manifestPath: string, manifestSelected): Promise<any> {
+export function removeManifest(application: string, manifestPath: string, manifestSelected): Promise<any> {
   if (fs.existsSync(manifestPath)) {
     manifestPath = fs.realpathSync(manifestPath);
   }
@@ -134,7 +134,7 @@ function removeManifest(application: string, manifestPath: string, manifestSelec
 // NON-WIN32 COMMANDS //
 async function addManifestToSideloadingDirectory(application: string, manifestPath: string): Promise<void> {
   try {
-    const sideloadingDirectory = applicationProperties[application].sideloadingDirectory;
+    const sideloadingDirectory = getSideloadingManifestDirectory(application);
     fs.ensureDirSync(sideloadingDirectory);
     const sideloadingManifestPath = await getSideloadManifestPath(manifestPath, application);
     console.log(`Adding ${sideloadingManifestPath} for application ${application}`);
@@ -145,13 +145,13 @@ async function addManifestToSideloadingDirectory(application: string, manifestPa
   }
 }
 
-function getManifestsFromSideloadingDirectory(inputApplication: string): Promise<string[]> {
+export function getManifestsFromSideloadingDirectory(inputApplication: string): Promise<string[]> {
   return new Promise((resolve, reject) => {
     let manifestPaths = [];
 
     for (let application of Object.keys(applicationProperties)) {
       if (!inputApplication || application === inputApplication) {
-        const sideloadingDirectory = applicationProperties[application].sideloadingDirectory;
+        const sideloadingDirectory = getSideloadingManifestDirectory(application);
 
         if (!fs.existsSync(sideloadingDirectory)) {
           continue;
@@ -172,7 +172,7 @@ async function removeManifestFromSideloadingDirectory(inputApplication: string, 
 
     for (let application of Object.keys(applicationProperties)) {
       if (!inputApplication || application === inputApplication) {
-        const sideloadingDirectory = applicationProperties[application].sideloadingDirectory;
+        const sideloadingDirectory = getSideloadingManifestDirectory(application);
 
         if (!fs.existsSync(sideloadingDirectory)) {
           continue;
@@ -257,7 +257,7 @@ function addManifestToRegistry(manifestPath: string): Promise<any> {
   return querySideloadingRegistry(['Set-ItemProperty -LiteralPath $RegistryPath -Name "' + manifestPath + '" -Value "' + manifestPath + '"']);
 }
 
-function getManifestsFromRegistry(): Promise<string[]> {
+export function getManifestsFromRegistry(): Promise<string[]> {
   return new Promise(async(resolve, reject) => {
     try {
       const registryOutput = await querySideloadingRegistry(['Get-ItemProperty -LiteralPath $RegistryPath | ConvertTo-Json -Compress']);
@@ -367,13 +367,17 @@ function validateManifest(manifestPath: string): Promise<string> {
   });
 }
 
-async function getSideloadManifestPath(manifestPath: string, application: string): Promise<string> {
+export function getSideloadingManifestDirectory(application: string): string {
+  return applicationProperties[application].sideloadingDirectory;
+}
+
+export async function getSideloadManifestPath(manifestPath: string, application: string): Promise<string> {
   const [type, manifestGuid, version] = await parseManifest(manifestPath);
-  return path.join(applicationProperties[application].sideloadingDirectory, `${manifestGuid}.${path.basename(manifestPath)}`);
+  return path.join(getSideloadingManifestDirectory(application), `${manifestGuid}.${path.basename(manifestPath)}`);
 }
 
 async function getLegacySideloadManifestPath(manifestPath: string, application: string): Promise<string> {
-  return path.join(applicationProperties[application].sideloadingDirectory, path.basename(manifestPath));
+  return path.join(getSideloadingManifestDirectory(application), path.basename(manifestPath));
 }
 
 async function compareManifestGuids(manifestPath1: string, manifestPath2: string): Promise<boolean> {
