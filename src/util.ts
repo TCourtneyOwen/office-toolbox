@@ -188,6 +188,7 @@ async function removeManifestFromSideloadingDirectory(inputApplication: string, 
           legacySideloadingManifestPath = await getLegacySideloadManifestPath(manifestPathToRemove, application);
         }
         
+        // Check the wef folder for both the uniquely named manifest file and the generically named manifest file
         fs.readdirSync(sideloadingDirectory).forEach(async manifestName => {
           const realManifestPath = (fs.realpathSync(path.join(sideloadingDirectory, manifestName)));
           if (fs.existsSync(sideloadingManifestPath) && sideloadingManifestPath === realManifestPath) {
