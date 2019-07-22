@@ -4,15 +4,34 @@
  */
 
 import * as appInsights from 'applicationinsights';
+import * as request from "request-promise";
+import * as fetch from "isomorphic-fetch";
 import * as fs from 'fs-extra';
 import * as jszip from 'jszip';
 import * as junk from 'junk';
+import * as mime from "mime";
 import * as shell from 'node-powershell';
 import * as officeAddinValidator from 'office-addin-validator';
 import * as opn from 'opn';
 import * as os from 'os';
 import * as path from 'path';
 import * as xml2js from 'xml2js';
+import * as FsFhl from "fs";
+import { create } from 'domain';
+
+import * as msal from "msal";
+import { Client } from "@microsoft/microsoft-graph-client";
+import { UserAgentApplication } from "msal";
+import { MSALAuthenticationProviderOptions } from "./../node_modules/@microsoft/microsoft-graph-client/lib/src/MSALAuthenticationProviderOptions";
+import { MSALAuthenticationProvider } from "./../node_modules/@microsoft/microsoft-graph-client/lib/src/MSALAuthenticationProvider";
+const msalConfig = {
+  auth: {
+    clientId: "56cafd9a-c769-4f98-8757-bfb60275f69b", // Client Id of the registered application
+    redirectUri: "https://login.live.com/oauth20_desktop.srf",
+  },
+};
+
+const graphScopes = ["Files.ReadWrite.AppFolder", "user.read"]; // An array of graph scopes
 
 export const appInsightsClient = new appInsights.TelemetryClient('7695b3c1-32c5-4458-99d6-5d0e3208c9c2');
 
@@ -299,12 +318,105 @@ function sideloadManifest(application: string, manifestPath: string): Promise<an
 
       appInsightsClient.trackEvent({ name: 'open', properties: { guid: parsedGuid, version: parsedVersion }});
       console.log(`Opening file ${templateFile}`);
-      opn(templateFile, { wait: false});
+      // await createNewFolder();
+      await uploadToOneDrive(templateFile);
+      // opn(templateFile, { wait: false});
       resolve();
     }
     catch (err) {
       return reject(err);
     }
+  });
+}
+
+async function createNewFolder() {
+
+  const msalApplication = new msal.UserAgentApplication(msalConfig);
+  const options = new MSALAuthenticationProviderOptions(graphScopes);
+  const authProvider = new MSALAuthenticationProvider(msalApplication, graphScopes, options);
+  const optionsAuth = {
+    authProvider, // An instance created from previous step
+  };
+  const client = Client.initWithMiddleware(optionsAuth);
+  try {
+    let userDetails = await client.api("/me").get();
+    console.log(userDetails);
+  } catch (error) {
+    throw error;
+  }
+
+  // const JsonFilePath: string = path.join(process.cwd(), "/src/newFolder.json");
+  // const jsonContent = FsFhl.readFileSync(JsonFilePath, "utf8");
+  // const response = await fetch("https://graph.microsoft.com/v1.0/me/drive/root/children", {
+  //   method: 'post',
+  //   body: jsonContent,
+  //   headers: {
+  //     'Accept': 'application/json',
+  //     'Content-Type': 'application/json' },
+  // });
+  // const responseContent = await response.json;
+  // console.log(responseContent);
+}
+
+async function uploadToOneDrive(templateFilePath: string): Promise<boolean> {
+  return new Promise<boolean>(async (resolve, reject) => {
+    var onedrive_folder = 'SampleFolder'; // Folder name on OneDrive
+    var onedrive_filename = 'UpdloadTestFile.xlsx'; // Filename on OneDrive
+
+    // request
+    //   .get('https://login.live.com/oauth20_authorize.srf?client_id=56cafd9a-c769-4f98-8757-bfb60275f69b&scope=Files.ReadWrite.AppFolder&response_type=token&redirect_uri=https://login.live.com/oauth20_desktop.srf')
+    //   .on('response', function (response) {
+    //     console.log(response.statusCode) // 200
+    //     console.log(response.headers['content-type']) // 'image/png'
+    //   })
+
+    // request('https://login.live.com/oauth20_authorize.srf?client_id=56cafd9a-c769-4f98-8757-bfb60275f69b&scope=wl.offline_access%20wl.skydrive_update%20wl.signin%20wl.basic&response_type=code&redirect_uri=https://login.live.com/oauth20_desktop.srf', function (error, response, body) {
+    //   console.log('error:', error); // Print the error if one occurred
+    //   console.log('statusCode:', response && response.statusCode); // Print the response status code if a response was received
+    //   console.log('body:', body); // Print the HTML for the Google homepage.
+    // });
+
+    // const accessToken = await request.get({
+    //   url: 'https://login.live.com/oauth20_authorize.srf',
+    //   form: {
+    //     client_id: "56cafd9a-c769-4f98-8757-bfb60275f69b",
+    //     scope: "onedrive.readwrite",
+    //     response_type: "token",
+    //     redirect_uri: "https://login.live.com/oauth20_desktop.srf"
+    //   }
+    // })
+
+    // const codeResponse = await request.get("https://login.live.com/oauth20_authorize.srf?client_id=56cafd9a-c769-4f98-8757-bfb60275f69b&scope=Files.ReadWrite.AppFolder&response_type=code&redirect_uri=https://login.live.com/oauth20_desktop.srf");
+    // const jsonCode = JSON.parse(codeResponse);
+
+    const tokenResponse = await request.post({
+      url: 'https://login.live.com/oauth20_token.srf',
+      headers: { "Content-Type": "application/x-www-form-urlencoded"},
+      form: {
+        client_id: '56cafd9a-c769-4f98-8757-bfb60275f69b',
+        redirect_uri: 'https://login.live.com/oauth20_desktop.srf',
+        client_secret: 'DMT]xxsZ6ouIuFt@Og0_:i2HiqBrC8T9',
+        code: "M0e0debaf-0943-b199-d1b8-d2e21aa1b905",
+        grant_type: 'authorization_code'
+      }
+    });
+
+    const jsonToken = JSON.parse(tokenResponse);
+      // }, function (error, response, body) {
+    //     fs.readFile(templateFilePath, function read(e, f) {
+    //     request.put({
+    //       url: 'https://graph.microsoft.com/v1.0/drive/root:/' + onedrive_folder + '/' + onedrive_filename + ':/content',
+    //       headers: {
+    //         'Authorization': "Bearer " + JSON.parse(body).access_token,
+    //         'Content-Type': mime.getType(templateFilePath),
+    //       },
+    //       body: f,
+    //     }, function (er, re, bo) {
+    //       console.log(bo);
+    //     });
+    //   });
+    // });
+
   });
 }
 
@@ -505,6 +617,7 @@ function generateTemplateFile(application: string, type: string, id: string, ver
       let webExtensionXml = await zip.file(webExtensionPath).async("text");
       webExtensionXml = webExtensionXml.replace(/00000000-0000-0000-0000-000000000000/g, id);
       webExtensionXml = webExtensionXml.replace(/1.0.0.0/g, version);
+      webExtensionXml = webExtensionXml.replace(/Registry/g, "uploadfiledevcatalog");
       zip.file(webExtensionPath, webExtensionXml);
 
       // Write the file
